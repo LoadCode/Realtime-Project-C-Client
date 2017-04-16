@@ -3,12 +3,12 @@
 
 #include <stdint.h>
 
-/*Inicia dUQx*/
+/*Inicia dUQx: retorna 0 si la inicializaciÃ³n saliÃ³ bien, 1 en caso contrario*/
 uint8_t dUQx_Init(int);
 
 void dUQx_End(void);
 
-/*Verifica si dUQx está conectada*/
+/*Verifica si dUQx estï¿½ conectada*/
 void dUQx_IsReady(void);
 
 /*Configura el puerto digital*/
@@ -20,10 +20,10 @@ void dUQx_WriteDigital(uint16_t );
 /*Lee el puerto digital*/
 void dUQx_ReadDigital(uint16_t *);
 
-/*Escribe el canal análogo*/
+/*Escribe el canal anï¿½logo*/
 void dUQx_WriteAnalog(double,double);
 
-/*Lee un canal análogo*/
+/*Lee un canal anï¿½logo*/
 void dUQx_ReadAnalogSingle(uint8_t ch,double vref,double * v);
 
 uint8_t dUQx_ReadAnalogBuffer(uint8_t ch,double vref,double
@@ -33,8 +33,8 @@ uint8_t dUQx_ReadAnalogBuffer(uint8_t ch,double vref,double
 void dUQx_CalibrateAnalog(double *);
 
 
-/*Selecciona entre la resolución de 10 bits (r=1) y 8 bits (r=0)*/
-/*Por defecto dUQx opera a una resolución de 10 bits*/
+/*Selecciona entre la resoluciï¿½n de 10 bits (r=1) y 8 bits (r=0)*/
+/*Por defecto dUQx opera a una resoluciï¿½n de 10 bits*/
 void dUQX_SetResolution(uint8_t r);
 
 

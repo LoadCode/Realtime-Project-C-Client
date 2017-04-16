@@ -1,6 +1,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
+#include <dUQx.h>
 #include <uqeasysocket.h>
 
 #define IP_SERVER "127.0.0.1"
@@ -20,6 +21,9 @@ typedef struct timespec time_process_t;
 typedef struct 
 {
 	int usbPort;
+	int analogInput;
+	int resolution;
+	double vref;
 	double normal_ts;
 	time_process_t sample_time;	
 } process_data_t;
@@ -35,7 +39,9 @@ int main()
 	int finish = 0;
 	double i = 0, i_swap = 0;
 	
-	
+	// algunas inicilizaciones
+	process_info.analogInput = 0; //canal A0 de la tarjeta Arduino
+	process_info.resolution = 1;  //for 10 bit resolution
 
 	// creates client
 	if(client_create(IP_SERVER, PORT, &client_info.server_socket))
@@ -60,6 +66,17 @@ int main()
 	receive_data(client_info.server_socket, &process_info.normal_ts, sizeof(double));
 	swapbytes(&process_info.normal_ts, sizeof(double));
 	
+
+	//Inicialización de dUQx
+	if(dUQx_Init(process_info.usbPort))
+	{
+		printf("Error iniciando dUQx\n");
+		close_socket(client_info.server_socket);
+		return 0;
+	}
+	dUQx_CalibrateAnalog(&process_info.vref);
+	dUQX_SetResolution(process_info.resolution);
+
 	printf("Ts = %f\n",process_info.normal_ts);
 	printf("usbPort = %d\n",process_info.usbPort);
 	process_info.sample_time = get_time_struct(process_info.normal_ts);
@@ -67,18 +84,18 @@ int main()
 	// Muestreo del proceso
 	do
 	{
+		dUQx_ReadAnalogSingle(process_info.analogInput, process_info.vref, &i);
+		i_swap = i;
 		swapbytes(&i_swap, sizeof(double));
 		send_data(client_info.server_socket, &i_swap, sizeof(double));
 		receive_data(client_info.server_socket, &finish, sizeof(int));
 		swapbytes(&finish, sizeof(int));
-		i++;
-		i_swap = i;
-		printf("contanto i = %f\n",i);
+		printf("i = %f\n",i);
 		nanosleep(&process_info.sample_time, NULL);
 	}while(finish == 0);
-	printf("Proceso de cliente terminado bien\n");
 	close_socket(client_info.server_socket);
-
+	dUQx_End();
+	printf("Proceso de cliente terminado bien\n");
 	return 0;
 }
 
