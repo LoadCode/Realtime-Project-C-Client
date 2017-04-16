@@ -72,7 +72,9 @@ int main()
 	receive_data(client_info.server_socket, &process_info.normal_ts, sizeof(double));
 	swapbytes(&process_info.normal_ts, sizeof(double));
 	
-
+	/*printf("Ts = %f\n",process_info.normal_ts);
+	printf("usbPort = %d\n",process_info.usbPort);*/
+	
 	//Inicialización de dUQx
 	if(dUQx_Init(process_info.usbPort))
 	{
@@ -83,8 +85,6 @@ int main()
 	dUQx_CalibrateAnalog(&process_info.vref);
 	dUQX_SetResolution(process_info.resolution);
 
-	printf("Ts = %f\n",process_info.normal_ts);
-	printf("usbPort = %d\n",process_info.usbPort);
 	process_info.sample_time = get_time_struct(process_info.normal_ts);
 	
 	// Muestreo del proceso
