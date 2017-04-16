@@ -37,7 +37,10 @@ int main()
 	int request = REQUEST_VAL;
 	int req_answer;
 	int finish = 0;
-	double i = 0, i_swap = 0;
+	double time_counter = 0.0;
+	double time_counter_swap = 0.0;
+	double signal_value = 0.0;
+	double signal_swap = 0.0;
 	
 	// algunas inicilizaciones
 	process_info.analogInput = 0; //canal A0 de la tarjeta Arduino
@@ -56,7 +59,10 @@ int main()
 	send_data(client_info.server_socket, &request, sizeof(int));
 	receive_data(client_info.server_socket, &req_answer, sizeof(int));
 	swapbytes(&req_answer, sizeof(int));
-	printf("Respuesta request: %d\n",req_answer);
+	if(req_answer == REQUEST_YES)
+		printf("Respuesta request: OK\n");
+	else
+		printf("Respuesta request: FAIL (leaving thread)\n");
 	if(req_answer != REQUEST_YES)
 		return 0;
 	
@@ -84,14 +90,18 @@ int main()
 	// Muestreo del proceso
 	do
 	{
-		dUQx_ReadAnalogSingle(process_info.analogInput, process_info.vref, &i);
-		i_swap = i;
-		swapbytes(&i_swap, sizeof(double));
-		send_data(client_info.server_socket, &i_swap, sizeof(double));
+		dUQx_ReadAnalogSingle(process_info.analogInput, process_info.vref, &signal_value);
+		signal_swap = signal_value;
+		swapbytes(&signal_swap, sizeof(double));
+		send_data(client_info.server_socket, &signal_swap, sizeof(double));
+		time_counter_swap = time_counter;
+		swapbytes(&time_counter_swap, sizeof(double));
+		send_data(client_info.server_socket, &time_counter_swap, sizeof(double));
 		receive_data(client_info.server_socket, &finish, sizeof(int));
 		swapbytes(&finish, sizeof(int));
-		printf("i = %f\n",i);
+		printf("signal_value = %f\n",signal_value);
 		nanosleep(&process_info.sample_time, NULL);
+		time_counter += process_info.normal_ts; // seconds
 	}while(finish == 0);
 	close_socket(client_info.server_socket);
 	dUQx_End();
