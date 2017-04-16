@@ -3,7 +3,7 @@
 #include <time.h>
 #include <uqeasysocket.h>
 
-#define IP_SERVER "192.168.0.20"
+#define IP_SERVER "127.0.0.1"
 #define PORT 2222
 #define REQUEST_VAL 45862
 #define REQUEST_YES 2958
