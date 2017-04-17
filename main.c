@@ -25,8 +25,15 @@ typedef struct
 	int resolution;
 	double vref;
 	double normal_ts;
+	double current_time;
+	double setpoint;
+	double step_time;
+	double control_signal;
+	double control_signal_swap;
 	time_process_t sample_time;	
 } process_data_t;
+
+void get_control_signal(process_data_t *process_info);
 
 time_process_t get_time_struct(double Ts);
 
@@ -36,15 +43,15 @@ int main()
 	process_data_t process_info;
 	int request = REQUEST_VAL;
 	int req_answer;
-	int finish = 0;
-	double time_counter = 0.0;
-	double time_counter_swap = 0.0;
-	double signal_value = 0.0;
-	double signal_swap = 0.0;
+	int finish 				  = 0;
+	process_info.current_time = 0.0;
+	double time_counter_swap  = 0.0;
+	double signal_value       = 0.0;
+	double signal_swap 		  = 0.0;
 	
 	// algunas inicilizaciones
 	process_info.analogInput = 0; //canal A0 de la tarjeta Arduino
-	process_info.resolution = 1;  //for 10 bit resolution
+	process_info.resolution  = 1; //for 10 bit resolution
 
 	// creates client
 	if(client_create(IP_SERVER, PORT, &client_info.server_socket))
@@ -71,9 +78,11 @@ int main()
 	swapbytes(&process_info.usbPort, sizeof(int));
 	receive_data(client_info.server_socket, &process_info.normal_ts, sizeof(double));
 	swapbytes(&process_info.normal_ts, sizeof(double));
-	
-	/*printf("Ts = %f\n",process_info.normal_ts);
-	printf("usbPort = %d\n",process_info.usbPort);*/
+	receive_data(client_info.server_socket, &process_info.setpoint, sizeof(double));
+	swapbytes(&process_info.setpoint, sizeof(double));
+	receive_data(client_info.server_socket, &process_info.step_time, sizeof(double));
+	swapbytes(&process_info.step_time, sizeof(double));
+	printf("Ts = %f\n",process_info.normal_ts);
 	
 	//Inicialización de dUQx
 	if(dUQx_Init(process_info.usbPort))
@@ -86,7 +95,6 @@ int main()
 	dUQX_SetResolution(process_info.resolution);
 
 	process_info.sample_time = get_time_struct(process_info.normal_ts);
-	
 	// Muestreo del proceso
 	do
 	{
@@ -94,19 +102,29 @@ int main()
 		signal_swap = signal_value;
 		swapbytes(&signal_swap, sizeof(double));
 		send_data(client_info.server_socket, &signal_swap, sizeof(double));
-		time_counter_swap = time_counter;
+		get_control_signal(&process_info);
+		send_data(client_info.server_socket, &process_info.control_signal_swap, sizeof(double));
+		time_counter_swap = process_info.current_time;
 		swapbytes(&time_counter_swap, sizeof(double));
 		send_data(client_info.server_socket, &time_counter_swap, sizeof(double));
 		receive_data(client_info.server_socket, &finish, sizeof(int));
 		swapbytes(&finish, sizeof(int));
-		printf("signal_value = %f\n",signal_value);
+		process_info.current_time += process_info.normal_ts; // seconds
 		nanosleep(&process_info.sample_time, NULL);
-		time_counter += process_info.normal_ts; // seconds
 	}while(finish == 0);
 	close_socket(client_info.server_socket);
 	dUQx_End();
 	printf("Proceso de cliente terminado bien\n");
 	return 0;
+}
+void get_control_signal(process_data_t *process_info)
+{
+	if(process_info->step_time <= process_info->current_time)
+		process_info->control_signal = process_info->setpoint;
+	else
+		process_info->control_signal = 0.0;
+	process_info->control_signal_swap = process_info->control_signal;
+	swapbytes(&process_info->control_signal_swap,sizeof(double));
 }
 
 
@@ -114,7 +132,7 @@ time_process_t get_time_struct(double Ts)
 {
 	time_process_t time;
 	double seconds, nanoseconds;
-	nanoseconds  = modf(Ts, &seconds) * 1000000000UL; // gets seconds and nanoseconds from incomming millis
+	nanoseconds  = modf(Ts, &seconds) * 1000000000UL; // separate seconds and nanoseconds from incomming time value (given in seconds)
 	time.tv_sec  = seconds;
 	time.tv_nsec = nanoseconds;
 	return time;
