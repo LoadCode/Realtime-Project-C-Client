@@ -1,9 +1,20 @@
+# Author: Julio César Echeverri Marulanda (c) 2017
 
-INCLUDE_PATH = ./includes/
+INCLUDE_PATH = ./include/
+OBJS = utils.o dUQx.o rs232.o
+SRC  = ./src/
 
+all: ${SRC}main.c ${OBJS}
+	gcc -Wall -I${INCLUDE_PATH} -o client $^ libuqeasysocket.a -lm
 
-all: main.c
-	gcc -Wall -I${INCLUDE_PATH} -o main ./includes/RS-232/rs232.c dUQx.c main.c libuqeasysocket.a -lm
+dUQx.o: ${SRC}dUQx.c
+	gcc -Wall -I${INCLUDE_PATH} -c $< -o $@
+
+utils.o: ${SRC}utils.c
+	gcc -Wall -I${INCLUDE_PATH} -c $< -o $@
+	
+rs232.o: ${SRC}rs232.c
+	gcc -Wall -I${INCLUDE_PATH} -c $< -o $@
 
 clean:
-	rm main
+	rm client ${OBJS}

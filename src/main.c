@@ -2,40 +2,75 @@
 #include <stdlib.h>
 #include <time.h>
 #include <dUQx.h>
-#include <uqeasysocket.h>
+#include <uqeasysocket.h>	
+#include <utils.h>
+#include <signal.h>
+#include <string.h>
 
 #define IP_SERVER "127.0.0.1"
 #define PORT 2222
 #define REQUEST_VAL 45862
 #define REQUEST_YES 2958
 
-struct socket_info
+
+
+int main()
 {
-	int server_socket;
-	int client_socket;
-};
+	client_data_t clientI;
+	control_data_t processOne, processTwo;
 
-typedef struct socket_info socket_info_t;
-typedef struct timespec time_process_t;
+	// Inicializaciones
+	clientI.port = PORT;
+	clientI.requestValue = REQUEST_VAL;
+	strcpy(clientI.ip, IP_SERVER);
 
-typedef struct 
-{
-	int usbPort;
-	int analogInput;
-	int resolution;
-	double vref;
-	double normal_ts;
-	double current_time;
-	double setpoint;
-	double step_time;
-	double control_signal;
-	double control_signal_swap;
-	time_process_t sample_time;	
-} process_data_t;
+	// creación del primer cliente
+	if(client_create(clientI.ip, clientI.port, &clientI.serverSocket))
+	{
+		printf("Error al intentar conectar con el servidor: %s \n",clientI.ip);
+		return 1;
+	}
 
-void get_control_signal(process_data_t *process_info);
+	// intentamos establecer conexión con el servidor
+	swapbytes(&clientI.requestValue, sizeof(int));
+	send_data(clientI.serverSocket, &clientI.requestValue, sizeof(int));
+	receive_data(clientI.serverSocket, &clientI.serverAnswer, sizeof(int));
+	swapbytes(&clientI.serverAnswer, sizeof(int));
 
-time_process_t get_time_struct(double Ts);
+	if(clientI.serverAnswer == REQUEST_YES)
+	{
+		printf("Respuesta request: OK\n");
+	}
+	else
+	{
+		printf("Respuesta del servidor: FAIL (leaving thread)\n");
+		return 1;
+	}
+
+	// Obtención de parámetros
+	GettingParameters(&clientI, &processOne, &processTwo);
+
+	// Creación de hilos por proceso
+	printf("Controlador 1\n");
+	ShowParameters(&processOne);
+	printf("Controlador 2\n");
+	ShowParameters(&processTwo);
+	close_socket(clientI.serverSocket);
+	printf("salimos bien\n");
+	return 0;
+}
+
+
+
+
+
+
+
+
+
+
+/*
+void sampler_control_handler();
 
 int main()
 {
@@ -48,10 +83,19 @@ int main()
 	double time_counter_swap  = 0.0;
 	double signal_value       = 0.0;
 	double signal_swap 		  = 0.0;
+	timer_t timer_sampler;
+	struct itimerspec timer_params;
+	struct sigevent event;
+	struct sigaction action;
+	int signum = SIGALRM;
+	sigset_t set;
 	
+
 	// algunas inicilizaciones
 	process_info.analogInput = 0; //canal A0 de la tarjeta Arduino
 	process_info.resolution  = 1; //for 10 bit resolution
+	sigemptyset(&set);
+	sigaddset(&set, signum);
 
 	// creates client
 	if(client_create(IP_SERVER, PORT, &client_info.server_socket))
@@ -66,6 +110,7 @@ int main()
 	send_data(client_info.server_socket, &request, sizeof(int));
 	receive_data(client_info.server_socket, &req_answer, sizeof(int));
 	swapbytes(&req_answer, sizeof(int));
+
 	if(req_answer == REQUEST_YES)
 		printf("Respuesta request: OK\n");
 	else
@@ -94,22 +139,43 @@ int main()
 	dUQx_CalibrateAnalog(&process_info.vref);
 	dUQX_SetResolution(process_info.resolution);
 
+
 	process_info.sample_time = get_time_struct(process_info.normal_ts);
-	// Muestreo del proceso
+	event.sigev_notify = SIGEV_SIGNAL;
+	event.sigev_signo  = signum;
+	sigprocmask(SIG_BLOCK, &set, NULL);
+	action.sa_handler = &sampler_control_handler;
+	action.sa_flags   = 0;
+	sigprocmask(SIG_UNBLOCK, &set, NULL);
+	sigaction(signum, &action, NULL);
+	timer_create(CLOCK_REALTIME, &event, &timer_sampler);
+	//Configuración de parámetros del temporizador
+	timer_params.it_value.tv_sec     = process_info.sample_time.tv_sec;
+	timer_params.it_value.tv_nsec    = process_info.sample_time.tv_nsec;
+	timer_params.it_interval.tv_sec  = process_info.sample_time.tv_sec;
+	timer_params.it_interval.tv_nsec = process_info.sample_time.tv_nsec;
+
+	// Muestreo del proceso (puede ser incluido en un hilo o en una tarea temporizada)
 	do
 	{
+		//Reads one sample & sends it to server
 		dUQx_ReadAnalogSingle(process_info.analogInput, process_info.vref, &signal_value);
 		signal_swap = signal_value;
 		swapbytes(&signal_swap, sizeof(double));
 		send_data(client_info.server_socket, &signal_swap, sizeof(double));
+		//Computes the control signal & sends it to server
 		get_control_signal(&process_info);
 		send_data(client_info.server_socket, &process_info.control_signal_swap, sizeof(double));
+		//Sends the value of the time variable to the server
 		time_counter_swap = process_info.current_time;
 		swapbytes(&time_counter_swap, sizeof(double));
 		send_data(client_info.server_socket, &time_counter_swap, sizeof(double));
+		//Updates the status of the FINISH flag from the java server
 		receive_data(client_info.server_socket, &finish, sizeof(int));
 		swapbytes(&finish, sizeof(int));
+		//Updates the value of the time variable
 		process_info.current_time += process_info.normal_ts; // seconds
+		//waits for the next iteration
 		nanosleep(&process_info.sample_time, NULL);
 	}while(finish == 0);
 	close_socket(client_info.server_socket);
@@ -117,25 +183,11 @@ int main()
 	printf("Proceso de cliente terminado bien\n");
 	return 0;
 }
-void get_control_signal(process_data_t *process_info)
+
+
+void sampler_control_handler()
 {
-	if(process_info->step_time <= process_info->current_time)
-		process_info->control_signal = process_info->setpoint;
-	else
-		process_info->control_signal = 0.0;
-	process_info->control_signal_swap = process_info->control_signal;
-	swapbytes(&process_info->control_signal_swap,sizeof(double));
+	printf("Inside loop\n");
 }
 
-
-time_process_t get_time_struct(double Ts)
-{
-	time_process_t time;
-	double seconds, nanoseconds;
-	nanoseconds  = modf(Ts, &seconds) * 1000000000UL; // separate seconds and nanoseconds from incomming time value (given in seconds)
-	time.tv_sec  = seconds;
-	time.tv_nsec = nanoseconds;
-	return time;
-}
-
-
+*/

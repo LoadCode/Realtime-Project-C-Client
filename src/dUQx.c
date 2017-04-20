@@ -6,19 +6,19 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <RS-232/rs232.h>
+#include "RS-232/rs232.h"
 
 
 
 
-#include <requests.h>   /* custom request numbers */
+#include "requests.h"   /* custom request numbers */
 
 /*Manejador del dispositivo*/
 int handle;
 
 /*Resolución, 1: 10 bits, 0: 8 bits*/
 unsigned char res_mode=1;
- 
+
 /*Main communication function through serial port*/
  void serial_control_msg(int handle, uint8_t *buffer){
 
@@ -27,6 +27,7 @@ RS232_SendBuf(handle, buffer, 3);
 
  /*Reads response from dUQx*/
 RS232_PollComport(handle, buffer, 2);
+
 
 
 
@@ -127,10 +128,10 @@ RS232_PollComport(handle, buffer, 2);
 }
 
 
-void dUQx_WriteAnalog(double v,double vref){
+void dUQx_WriteAnalog(double v,double vref,uint8_t ch){
 
     uint16_t v_i;
-    uint8_t buffer[3];
+    uint8_t buffer[4];
 
 
 
@@ -147,9 +148,10 @@ void dUQx_WriteAnalog(double v,double vref){
 	 buffer[0]=DUQX_DAC_WRITE_SINGLE;
 buffer[1]=v_i&0xff;
 buffer[2]=(v_i>>8)&0x3;
+buffer[3]=(ch)&0x01;
 
 /*Writes commands to dUQx*/
-RS232_SendBuf(handle, buffer, 3);
+RS232_SendBuf(handle, buffer, 4);
 
 
 
