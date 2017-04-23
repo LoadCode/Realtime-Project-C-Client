@@ -4,6 +4,7 @@
 #include <uqeasysocket.h>
 
 typedef struct timespec process_time_t;
+typedef enum{false, true} bool;
 
 typedef struct
 {
@@ -12,14 +13,17 @@ typedef struct
     int analogInput;
     int analogOutput;
     int resolution;
+    int finishFlag;
 
     /*Controller related info*/
     double setpoint;
+    double inputSignal;
     double kp;
     double ki;
     double kd;
     double currentTime;
     double normalTs; //sample time in seconds
+    double normalTsSwaped;
     process_time_t sampleTime;
 } control_data_t;
 
@@ -35,7 +39,7 @@ typedef struct
 } client_data_t;
 
 void GettingParameters(client_data_t *client, control_data_t *controllerOne, control_data_t *controllerTwo);
-
+process_time_t GetTimeStruct(double Ts);
 void ShowParameters(control_data_t *controller);
 
 #endif //_UTILS_H_

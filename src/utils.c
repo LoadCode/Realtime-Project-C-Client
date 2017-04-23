@@ -52,7 +52,7 @@ void GettingParameters(client_data_t *client, control_data_t *controllerOne, con
 }
 
 
-process_time_t get_time_struct(double Ts)
+process_time_t GetTimeStruct(double Ts)
 {
 	process_time_t time;
 	double seconds, nanoseconds;
@@ -61,6 +61,7 @@ process_time_t get_time_struct(double Ts)
 	time.tv_nsec = nanoseconds;
 	return time;
 }
+
 
 void ShowParameters(control_data_t *controller)
 {

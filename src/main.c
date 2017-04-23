@@ -1,16 +1,98 @@
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
+#include <pthread.h>
 #include <dUQx.h>
 #include <uqeasysocket.h>	
 #include <utils.h>
-#include <signal.h>
 #include <string.h>
 
 #define IP_SERVER "127.0.0.1"
-#define PORT 2222
+#define MAIN_PORT 34869
+#define PORT_CLIENT  34869
 #define REQUEST_VAL 45862
 #define REQUEST_YES 2958
+
+
+void * ControllerI(void * args)
+{
+	printf("Iniciando HILO I.\n");
+	control_data_t *controlInfo = (control_data_t*)args;
+	client_data_t client;
+
+	controlInfo->currentTime = 0;
+	double signal_swap = 4;
+	double control_swap = 5;
+	strcpy(client.ip, IP_SERVER);
+	client.port = PORT_CLIENT;
+	controlInfo->sampleTime = GetTimeStruct(controlInfo->normalTs);
+	swapbytes(&signal_swap, sizeof(double));
+	swapbytes(&control_swap, sizeof(double));
+
+	// creación del primer cliente
+	if(client_create(client.ip, client.port, &client.serverSocket))
+	{
+		printf("Error al intentar conectar uno de los hilos con el servidor: %s \n",client.ip);
+		return NULL;
+	}
+	printf("Cliente  ctrl I creado\n");
+	while(controlInfo->finishFlag == false)
+	{
+		//Updates the status of the FINISH flag from the java server
+		send_data(client.serverSocket, &signal_swap, sizeof(double));
+		send_data(client.serverSocket, &control_swap, sizeof(double));
+		controlInfo->normalTsSwaped = controlInfo->currentTime;
+		swapbytes(&controlInfo->normalTsSwaped, sizeof(double));
+		send_data(client.serverSocket, &controlInfo->normalTsSwaped, sizeof(double));
+		receive_data(client.serverSocket, &controlInfo->finishFlag, sizeof(int));
+		swapbytes(&controlInfo->finishFlag, sizeof(int));
+		controlInfo->currentTime += controlInfo->normalTs;
+		nanosleep(&controlInfo->sampleTime, NULL);
+	}
+	close_socket(client.serverSocket);
+	printf("Terminado el hilo\n");
+	return NULL;
+}
+
+
+void * ControllerII(void * args)
+{
+	printf("Iniciando HILO II.\n");
+	control_data_t *controlInfo = (control_data_t*)args;
+	client_data_t client;
+
+	controlInfo->currentTime = 0;
+	double signal_swap = 6;
+	double control_swap = 7;
+	strcpy(client.ip, IP_SERVER);
+	client.port = PORT_CLIENT;
+	controlInfo->sampleTime = GetTimeStruct(controlInfo->normalTs);
+	swapbytes(&signal_swap, sizeof(double));
+	swapbytes(&control_swap, sizeof(double));
+	// creación del primer cliente
+	if(client_create(client.ip, client.port, &client.serverSocket))
+	{
+		printf("Error al intentar conectar uno de los hilos con el servidor: %s \n",client.ip);
+		return NULL;
+	}
+	printf("Cliente ctrl II creado\n");
+	while(controlInfo->finishFlag == false)
+	{
+		//Updates the status of the FINISH flag from the java server
+		send_data(client.serverSocket, &signal_swap, sizeof(double));
+		send_data(client.serverSocket, &control_swap, sizeof(double));
+		controlInfo->normalTsSwaped = controlInfo->currentTime;
+		swapbytes(&controlInfo->normalTsSwaped, sizeof(double));
+		send_data(client.serverSocket, &controlInfo->normalTsSwaped, sizeof(double));
+		controlInfo->currentTime += controlInfo->normalTs;
+		receive_data(client.serverSocket, &controlInfo->finishFlag, sizeof(int));
+		swapbytes(&controlInfo->finishFlag, sizeof(int));
+		nanosleep(&controlInfo->sampleTime, NULL);
+	}
+	close_socket(client.serverSocket);
+	printf("Terminado el hilo\n");
+	return NULL;
+}
 
 
 
@@ -18,11 +100,16 @@ int main()
 {
 	client_data_t clientI;
 	control_data_t processOne, processTwo;
+	pthread_t thControlI;
+	pthread_t thControlII;
+
 
 	// Inicializaciones
-	clientI.port = PORT;
+	clientI.port = PORT_CLIENT;
 	clientI.requestValue = REQUEST_VAL;
 	strcpy(clientI.ip, IP_SERVER);
+	processOne.finishFlag = false;
+	processTwo.finishFlag = false;
 
 	// creación del primer cliente
 	if(client_create(clientI.ip, clientI.port, &clientI.serverSocket))
@@ -50,11 +137,19 @@ int main()
 	// Obtención de parámetros
 	GettingParameters(&clientI, &processOne, &processTwo);
 
+	// Inicialización de dUQx
+
 	// Creación de hilos por proceso
 	printf("Controlador 1\n");
 	ShowParameters(&processOne);
 	printf("Controlador 2\n");
 	ShowParameters(&processTwo);
+
+	pthread_create(&thControlI, NULL, ControllerI, &processOne);
+	pthread_create(&thControlII, NULL, ControllerII, &processTwo);
+	pthread_join(thControlI, NULL);
+	pthread_join(thControlII, NULL);
+
 	close_socket(clientI.serverSocket);
 	printf("salimos bien\n");
 	return 0;

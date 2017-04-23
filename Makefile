@@ -5,7 +5,7 @@ OBJS = utils.o dUQx.o rs232.o
 SRC  = ./src/
 
 all: ${SRC}main.c ${OBJS}
-	gcc -Wall -I${INCLUDE_PATH} -o client $^ libuqeasysocket.a -lm
+	gcc -Wall -I${INCLUDE_PATH} -o client $^ libuqeasysocket.a -pthread -lm
 
 dUQx.o: ${SRC}dUQx.c
 	gcc -Wall -I${INCLUDE_PATH} -c $< -o $@
