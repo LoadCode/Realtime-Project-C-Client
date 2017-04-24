@@ -14,16 +14,23 @@ typedef struct
     int analogOutput;
     int resolution;
     int finishFlag;
+    double refVolt;
 
     /*Controller related info*/
     double setpoint;
-    double inputSignal;
+    double processOutput;
+    double swapProcessOutput;
+    double controllerOutput;
+    double swapControlOutput;
+    double error;
+    double iTerm; // integral term
+    double lastProcessOutput;
     double kp;
     double ki;
     double kd;
     double currentTime;
     double normalTs; //sample time in seconds
-    double normalTsSwaped;
+    double currentTimeSwap;
     process_time_t sampleTime;
 } control_data_t;
 
