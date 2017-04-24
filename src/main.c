@@ -246,7 +246,7 @@ int main()
 	pthread_mutex_destroy(&lockRead);
 	pthread_mutex_destroy(&lockWrite);
 	close_socket(clientI.serverSocket);
-	printf("salimos bien\n");
+	printf("Salida OK\n");
 	return 0;
 }
 
