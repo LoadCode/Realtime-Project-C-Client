@@ -8,14 +8,6 @@
 #include <utils.h>
 #include <string.h>
 
-#define IP_SERVER   "127.0.0.1"
-#define MAIN_PORT   34869
-#define PORT_CLIENT 34869
-#define REQUEST_VAL 45862
-#define REQUEST_YES 2958
-#define MAX_OUTPUT 5 //5 volts
-#define MIN_OUTPUT 0 //0 volts
-
 
 pthread_mutex_t lockRead;
 pthread_mutex_t lockWrite;
@@ -71,8 +63,12 @@ void * ControllerI(void * args)
 		dUQx_ReadAnalogSingle(controlInfo->analogInput, controlInfo->refVolt, &controlInfo->processOutput);
 		pthread_mutex_unlock(&lockRead);
 
-		// Calcula la ley de control para este hilo
-		GetControlSignal(controlInfo);
+		// Calcula la ley de control para este hilo (si es openloop se envía solo el setpoint)
+		if(controlInfo->loopType == CLOSEDLOOP_SIGNAL)
+			GetControlSignal(controlInfo);
+		else //for openloop
+			controlInfo->controllerOutput = controlInfo->setpoint;
+
 
 		// Escribe la tensión entregada por el controlador
 		pthread_mutex_lock(&lockWrite);
@@ -133,8 +129,11 @@ void * ControllerII(void * args)
 		dUQx_ReadAnalogSingle(controlInfo->analogInput, controlInfo->refVolt, &controlInfo->processOutput);
 		pthread_mutex_unlock(&lockRead);
 
-		// Calcula la ley de control para este hilo
-		GetControlSignal(controlInfo);
+		// Calcula la ley de control para este hilo (si es openloop se envía solo el setpoint)
+		if(controlInfo->loopType == CLOSEDLOOP_SIGNAL)
+			GetControlSignal(controlInfo);
+		else //for openloop
+			controlInfo->controllerOutput = controlInfo->setpoint;
 
 		// Escribe la tensión entregada por el controlador
 		pthread_mutex_lock(&lockWrite);
@@ -194,6 +193,7 @@ int main()
 	processTwo.iTerm        = 0.0;
 	processOne.lastProcessOutput = 0;
 	processTwo.lastProcessOutput = 0;
+
 	// creación del primer cliente
 	if(client_create(clientI.ip, clientI.port, &clientI.serverSocket))
 	{

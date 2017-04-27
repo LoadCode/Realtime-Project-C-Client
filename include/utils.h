@@ -3,6 +3,17 @@
 #include <time.h>
 #include <uqeasysocket.h>
 
+
+#define IP_SERVER   "127.0.0.1"
+#define MAIN_PORT   34869
+#define PORT_CLIENT 34869
+#define REQUEST_VAL 45862
+#define REQUEST_YES 2958
+#define MAX_OUTPUT 5 //5 volts
+#define MIN_OUTPUT 0 //0 volts
+#define OPENLOOP_SIGNAL    54378
+#define CLOSEDLOOP_SIGNAL  45876
+
 typedef struct timespec process_time_t;
 typedef enum{false, true} bool;
 
@@ -28,6 +39,7 @@ typedef struct
     double kp;
     double ki;
     double kd;
+    int loopType;
     double currentTime;
     double normalTs; //sample time in seconds
     double currentTimeSwap;
