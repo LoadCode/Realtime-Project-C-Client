@@ -24,9 +24,10 @@ int main()
 {
 	ControllerData_t processTemp, processFlow;
 	int server_sock,client_sock;
-
+	int finishCommFlag = 0, newDataFlag = 1;
+	double aux_setpoint = 0;
     /*Mutex para el acceso a la pantalla*/
-    omp_lock_t mtx_temp,mtx_flow,mtx_duqx;
+    omp_lock_t mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow;
 
     /*Conjunto de señales que manejará*/
     sigset_t set;
@@ -60,17 +61,20 @@ int main()
 	processFlow.kp = 0.2298;
     processFlow.ki = 0.03396;
 	processFlow.kd = 0.0;
+	processTemp.currentTime = 0.0;
+	processFlow.currentTime = 0.0;
 	processTemp.normalTs = 0.1;
 	processFlow.normalTs = 0.1;
-	processTemp.setpoint = 2.1;
-	processFlow.setpoint = 3.3;
+	processTemp.setpoint = 0.0;
+	processFlow.setpoint = 0.0;
 
 
 	
     /*Inicializa mutex*/
 	omp_init_lock(&mtx_temp);
     omp_init_lock(&mtx_flow);
-
+	omp_init_lock(&mtx_spn_flow);
+	omp_init_lock(&mtx_spn_temp);
     omp_set_lock(&mtx_temp);
     omp_set_lock(&mtx_flow);
 
@@ -103,7 +107,7 @@ int main()
 
 	//client_wait(server_sock,&client_sock);
 	
-#pragma omp parallel default(none) shared(processTemp, processFlow, mtx_temp,mtx_flow,mtx_duqx) firstprivate(server_sock,client_sock) private(set,timer_data,timer_id,sig_num,event)
+#pragma omp parallel default(none) shared(processTemp, processFlow, mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow) firstprivate(server_sock,client_sock) private(set,timer_data,timer_id,sig_num,event,aux_setpoint) firstprivate(finishCommFlag, newDataFlag)
     {
 
         #pragma omp sections
@@ -146,14 +150,17 @@ int main()
                     omp_unset_lock(&mtx_duqx);
 					
                     // Cálculo del PID
+					omp_set_lock(&mtx_spn_temp);
 					GetControlSignal(&processTemp);
-
+					processTemp.swapControlOutput = processTemp.controllerOutput;
+					omp_unset_lock(&mtx_spn_temp);
+					
 					// Escritura en la tarjeta
 					omp_set_lock(&mtx_duqx);
                     dUQx_WriteAnalog(processTemp.controllerOutput,processTemp.refVolt,DAC_CHANNEL_TEMP);
                     omp_unset_lock(&mtx_duqx);
 					
-                    /*Se informa al hilo de comunicación*/ 			
+                    /*Se informa al hilo de comunicación*/		
                     omp_unset_lock(&mtx_temp);
                 }
             }
@@ -193,8 +200,11 @@ int main()
 					omp_unset_lock(&mtx_duqx);
 
 					// Cálculo del PID
+					omp_set_lock(&mtx_spn_flow);
 					GetControlSignal(&processFlow);
-
+					processFlow.swapControlOutput = processFlow.controllerOutput;
+					omp_unset_lock(&mtx_spn_flow);
+					
 					omp_set_lock(&mtx_duqx);
 					dUQx_WriteAnalog(processFlow.controllerOutput,processFlow.refVolt, processFlow.analogOutput);
                     omp_unset_lock(&mtx_duqx);
@@ -211,52 +221,88 @@ int main()
             {
 
                 /*Crear servidor y esperar conexión del cliente*/
-				//if(!server_create(SERVER_PORT, &server_sock))
-				//if(!client_wait(server_sock,&client_sock))
-                while(1)
-                {
-
-					// Recibir banderas
-					
-                    /*Esperar que el primer hilo lea el canal analógico 14*/
-                    omp_set_lock(&mtx_temp);
-					
-					gotoxy(0,1);
-                    printf2("Setpoint Temperatura: %lf v\n",processTemp.setpoint);
-                    gotoxy(0,2);
-                    printf2(" Salida de Temperatura: %lf v\n",processTemp.processOutput);
-					gotoxy(0,3);
-                    printf2("Entrada de Temperatura: %lf v\n",processTemp.controllerOutput);
-
-                   
-                    /*Esperar que el segundo hilo lea el canal analógico 15*/	
-                    omp_set_lock(&mtx_flow);
+				if(!server_create(SERVER_PORT, &server_sock))
+				{
+					//printf("Creo el servidor\n");
+					if(!client_wait(server_sock,&client_sock))
+					{
+						//printf("El cliente se conecto\n");
+						while(1)
+						{
+							// Recibir banderas
+							receive_data(client_sock, &finishCommFlag, sizeof(int));
+							receive_data(client_sock, &newDataFlag, sizeof(int));
+							swapbytes(&finishCommFlag, sizeof(int));
+							if(finishCommFlag == 1)
+								break;
+							swapbytes(&newDataFlag, sizeof(int));
+							if(newDataFlag == 1)
+							{
+								// Recibir nuevos parámetros de setpoint
+								receive_data(client_sock, &aux_setpoint,sizeof(double));
+								swapbytes(&aux_setpoint,sizeof(double));
+								omp_set_lock(&mtx_spn_temp);
+								processTemp.setpoint = aux_setpoint;
+								omp_unset_lock(&mtx_spn_temp);
+								receive_data(client_sock, &aux_setpoint,sizeof(double));
+								swapbytes(&aux_setpoint, sizeof(double));
+								omp_set_lock(&mtx_spn_flow);
+								processFlow.setpoint = aux_setpoint;
+								omp_unset_lock(&mtx_spn_flow);
+							}
+							
+							/*Esperar que el primer hilo lea el canal analógico 14*/
+							omp_set_lock(&mtx_temp);
+							
+							gotoxy(0,1);
+							printf2("Setpoint Temperatura: %lf v\n",processTemp.setpoint);
+							gotoxy(0,2);
+							printf2(" Salida de Temperatura: %lf v\n",processTemp.processOutput);
+							gotoxy(0,3);
+							printf2("Entrada de Temperatura: %lf v\n",processTemp.controllerOutput);
+							
+							
+							/*Esperar que el segundo hilo lea el canal analógico 15*/	
+							omp_set_lock(&mtx_flow);
                     
-					gotoxy(0,5);
-                    printf2("     Setpoint de Flujo: %lf v\n", processFlow.setpoint);
-                    gotoxy(0,6);
-                    printf2("       Salida de Flujo: %lf v\n", processFlow.processOutput);
-					gotoxy(0,7);
-                    printf2("      Entrada de Flujo: %lf v\n", processFlow.controllerOutput);
+							gotoxy(0,5);
+							printf2("     Setpoint de Flujo: %lf v\n", processFlow.setpoint);
+							gotoxy(0,6);
+							printf2("       Salida de Flujo: %lf v\n", processFlow.processOutput);
+							gotoxy(0,7);
+							printf2("      Entrada de Flujo: %lf v\n", processFlow.controllerOutput);
                     
-                    /*Enviar los voltajes al cliente*/	   
-					/*swapbytes(aux_set,2*sizeof(double));
-                    send_data(client_sock,aux_set,2*sizeof(double));
-					
-                    swapbytes(aux_v,2*sizeof(double));
-                    send_data(client_sock,aux_v,2*sizeof(double));
-					
-					swapbytes(aux_vin,2*sizeof(double));
-                    send_data(client_sock,aux_vin,2*sizeof(double));
-					*/			
+							/*Enviar los voltajes al cliente*/
 
-                }
+							processTemp.swapControlOutput = processTemp.controllerOutput;
+							swapbytes(&processTemp.swapControlOutput, sizeof(double));
+							send_data(client_sock,&processTemp.swapControlOutput,sizeof(double));
+							
+							processFlow.swapControlOutput = processFlow.controllerOutput;
+							swapbytes(&processFlow.swapControlOutput, sizeof(double));
+						    send_data(client_sock,&processFlow.swapControlOutput,sizeof(double));
+							
+							processTemp.swapProcessOutput = processTemp.processOutput;
+							swapbytes(&processTemp.swapProcessOutput, sizeof(double));
+							send_data(client_sock,&processTemp.swapProcessOutput,sizeof(double));
 
+							processFlow.swapProcessOutput = processFlow.processOutput;
+							swapbytes(&processFlow.swapProcessOutput, sizeof(double));
+							send_data(client_sock,&processFlow.swapProcessOutput,sizeof(double));
+
+							processTemp.currentTimeSwap   = processTemp.currentTime;
+							swapbytes(&processTemp.currentTimeSwap,sizeof(double));
+							send_data(client_sock,&processTemp.currentTimeSwap,sizeof(double));
+
+						   	processTemp.currentTime += processTemp.normalTs;
+							processFlow.currentTime += processFlow.normalTs;
+						}
+						close_socket(client_sock);
+						close_socket(server_sock);
+					}
+				}
             }	
-         
-        }
-
-
+       }
     }
 
     return(0);
