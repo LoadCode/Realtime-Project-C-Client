@@ -1,3 +1,4 @@
+
 CC=gcc
 LD=g++
 CFLAGS= -fopenmp -c -Wall -I./ -I../dUQx -I../libs/libconio -I../libs/uqeasysocket-dist
