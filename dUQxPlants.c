@@ -20,10 +20,11 @@ typedef struct itimerspec mytimer_t;
 
 
 
-int main()
+int main(int nargs, char* argsv[])
 {
 	ControllerData_t processTemp, processFlow;
 	int server_sock,client_sock;
+	int board_usb;
 	int finishCommFlag = 0, newDataFlag = 1;
 	double aux_setpoint = 0;
     /*Mutex para el acceso a la pantalla*/
@@ -40,6 +41,16 @@ int main()
     /*Estructura con la información temporal del temporizador*/
     mytimer_t timer_data;
 
+	if(nargs != 2)
+	{
+		printf("Please, set the port number of the board...\n");
+		return 0;
+	}
+	else
+	{
+		board_usb = atoi(argsv[1]);
+	}
+	
     // Inicializaciones
 	processTemp.finishFlag   = 0;
 	processFlow.finishFlag   = 0;
@@ -95,7 +106,11 @@ int main()
     omp_set_num_threads(3);
 
 	/*Inicializa dUQx*/
-    dUQx_Init(BOARD_USB);
+    if( dUQx_Init(board_usb))
+	{
+		printf("\rLa tarjeta esta desconectada o el puerto no corresponde\n\r");
+		return 0;
+	}	
     dUQX_SetResolution(processTemp.resolution);
     dUQx_CalibrateAnalog(&processTemp.refVolt);
 	processFlow.refVolt = processTemp.refVolt;
