@@ -1,4 +1,3 @@
-
 #include <omp.h>
 #include <stdio.h>
 #include <conio.h>
@@ -24,8 +23,10 @@ int main()
 {
 	ControllerData_t processTemp, processFlow;
 	int server_sock,client_sock;
+	int incomingFlags[2];
 	int finishCommFlag = 0, newDataFlag = 1;
-	double aux_setpoint = 0;
+	double aux_setpoint[2];
+	double dataSendBuffer[5];
     /*Mutex para el acceso a la pantalla*/
     omp_lock_t mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow;
 
@@ -39,7 +40,7 @@ int main()
     struct sigevent event;
     /*Estructura con la información temporal del temporizador*/
     mytimer_t timer_data;
-
+	
     // Inicializaciones
 	processTemp.finishFlag   = 0;
 	processFlow.finishFlag   = 0;
@@ -67,8 +68,6 @@ int main()
 	processFlow.normalTs = 0.1;
 	processTemp.setpoint = 0.0;
 	processFlow.setpoint = 0.0;
-
-
 	
     /*Inicializa mutex*/
 	omp_init_lock(&mtx_temp);
@@ -107,7 +106,7 @@ int main()
 
 	//client_wait(server_sock,&client_sock);
 	
-#pragma omp parallel default(none) shared(processTemp, processFlow, mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow) firstprivate(server_sock,client_sock) private(set,timer_data,timer_id,sig_num,event,aux_setpoint) firstprivate(finishCommFlag, newDataFlag)
+#pragma omp parallel default(none) shared(processTemp, processFlow, mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow) firstprivate(server_sock,client_sock) private(set,timer_data,timer_id,sig_num,event,aux_setpoint, dataSendBuffer,incomingFlags) firstprivate(finishCommFlag, newDataFlag)
     {
 
         #pragma omp sections
@@ -219,35 +218,33 @@ int main()
              ****************************************************************/	
             #pragma omp section
             {
-
                 /*Crear servidor y esperar conexión del cliente*/
 				if(!server_create(SERVER_PORT, &server_sock))
 				{
 					//printf("Creo el servidor\n");
-					if(!client_wait(server_sock,&client_sock))
+					if(!client_wait(server_sock, &client_sock))
 					{
 						//printf("El cliente se conecto\n");
 						while(1)
 						{
 							// Recibir banderas
-							receive_data(client_sock, &finishCommFlag, sizeof(int));
-							receive_data(client_sock, &newDataFlag, sizeof(int));
-							swapbytes(&finishCommFlag, sizeof(int));
+							receive_data(client_sock, &incomingFlags, 2*sizeof(int));
+							swapbytes(&incomingFlags, 2*sizeof(int));
+							printf("banderas = %d, %d\n",incomingFlags[0],incomingFlags[1]);
+							finishCommFlag = incomingFlags[1];
+							newDataFlag = incomingFlags[0];
 							if(finishCommFlag == 1)
 								break;
-							swapbytes(&newDataFlag, sizeof(int));
 							if(newDataFlag == 1)
 							{
-								// Recibir nuevos parámetros de setpoint
-								receive_data(client_sock, &aux_setpoint,sizeof(double));
-								swapbytes(&aux_setpoint,sizeof(double));
+								// Recibir nuevos parámetros de setpoint								
+								receive_data(client_sock, &aux_setpoint, 2*sizeof(double));
+								swapbytes(&aux_setpoint,2*sizeof(double));
 								omp_set_lock(&mtx_spn_temp);
-								processTemp.setpoint = aux_setpoint;
+								processTemp.setpoint = aux_setpoint[1];
 								omp_unset_lock(&mtx_spn_temp);
-								receive_data(client_sock, &aux_setpoint,sizeof(double));
-								swapbytes(&aux_setpoint, sizeof(double));
 								omp_set_lock(&mtx_spn_flow);
-								processFlow.setpoint = aux_setpoint;
+								processFlow.setpoint = aux_setpoint[0];
 								omp_unset_lock(&mtx_spn_flow);
 							}
 							
@@ -274,7 +271,14 @@ int main()
                     
 							/*Enviar los voltajes al cliente*/
 
-							processTemp.swapControlOutput = processTemp.controllerOutput;
+							dataSendBuffer[0] = processTemp.currentTime;
+							dataSendBuffer[1] = processFlow.processOutput;
+							dataSendBuffer[2] = processTemp.processOutput;
+							dataSendBuffer[3] = processFlow.controllerOutput;
+							dataSendBuffer[4] = processTemp.controllerOutput;
+							swapbytes(&dataSendBuffer, 5*sizeof(double));
+							
+							/*processTemp.swapControlOutput = processTemp.controllerOutput;
 							swapbytes(&processTemp.swapControlOutput, sizeof(double));
 							send_data(client_sock,&processTemp.swapControlOutput,sizeof(double));
 							
@@ -285,15 +289,15 @@ int main()
 							processTemp.swapProcessOutput = processTemp.processOutput;
 							swapbytes(&processTemp.swapProcessOutput, sizeof(double));
 							send_data(client_sock,&processTemp.swapProcessOutput,sizeof(double));
-
+							
 							processFlow.swapProcessOutput = processFlow.processOutput;
 							swapbytes(&processFlow.swapProcessOutput, sizeof(double));
 							send_data(client_sock,&processFlow.swapProcessOutput,sizeof(double));
-
+							
 							processTemp.currentTimeSwap   = processTemp.currentTime;
 							swapbytes(&processTemp.currentTimeSwap,sizeof(double));
 							send_data(client_sock,&processTemp.currentTimeSwap,sizeof(double));
-
+							*/
 						   	processTemp.currentTime += processTemp.normalTs;
 							processFlow.currentTime += processFlow.normalTs;
 						}
@@ -307,3 +311,5 @@ int main()
 
     return(0);
 }
+
+
