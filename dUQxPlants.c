@@ -56,10 +56,10 @@ int main()
 	
 	// Valores iniciales de Ki, Kp, Kd
 	processTemp.kp = 1.101; //0.8021;
-	processTemp.ki = 0.00122;
-	processTemp.kd = 0.005;
+	processTemp.ki = 0.00322;
+	processTemp.kd = 0.007;
 	processFlow.kp = 0.2298;
-    processFlow.ki = 0.03396;
+    processFlow.ki = 0.04396;
 	processFlow.kd = 0.0;
 	processTemp.currentTime = 0.0;
 	processFlow.currentTime = 0.0;
