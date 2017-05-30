@@ -10,7 +10,6 @@
 #include <uqeasysocket.h>
 #include "utils.h"
 
-#define BOARD_USB 16
 #define SERVER_PORT 9090
 
 
@@ -19,14 +18,13 @@ typedef struct itimerspec mytimer_t;
 
 
 
-int main()
+int main(int nargs, char* argsv[])
 {
 	ControllerData_t processTemp, processFlow;
 	int server_sock,client_sock;
-	int incomingFlags[2];
-	int finishCommFlag = 0, newDataFlag = 1;
-	double aux_setpoint[2];
-	double dataSendBuffer[5];
+	int board_usb;
+	unsigned char finishCommFlag = 0, newDataFlag = 0;
+	double aux_setpoint = 0;
     /*Mutex para el acceso a la pantalla*/
     omp_lock_t mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow;
 
@@ -40,6 +38,16 @@ int main()
     struct sigevent event;
     /*Estructura con la información temporal del temporizador*/
     mytimer_t timer_data;
+
+	if(nargs != 2)
+	{
+		printf("Please, set the port number of the board...\n");
+		return 0;
+	}
+	else
+	{
+		board_usb = atoi(argsv[1]);
+	}
 	
     // Inicializaciones
 	processTemp.finishFlag   = 0;
@@ -94,19 +102,18 @@ int main()
     omp_set_num_threads(3);
 
 	/*Inicializa dUQx*/
-    dUQx_Init(BOARD_USB);
+    if( dUQx_Init(board_usb))
+	{
+		printf("\rLa tarjeta esta desconectada o el puerto no corresponde\n\r");
+		return 0;
+	}	
     dUQX_SetResolution(processTemp.resolution);
     dUQx_CalibrateAnalog(&processTemp.refVolt);
 	processFlow.refVolt = processTemp.refVolt;
     
-	printf2("Creating threads...\n");
-	
-	/*Crear servidor y esperar conexión del cliente*/
-	//server_create(SERVER_PORT, &server_sock);
+	printf2("Creating threads...\n");	
 
-	//client_wait(server_sock,&client_sock);
-	
-#pragma omp parallel default(none) shared(processTemp, processFlow, mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow) firstprivate(server_sock,client_sock) private(set,timer_data,timer_id,sig_num,event,aux_setpoint, dataSendBuffer,incomingFlags) firstprivate(finishCommFlag, newDataFlag)
+#pragma omp parallel default(none) shared(processTemp, processFlow, mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow) firstprivate(server_sock,client_sock) private(set,timer_data,timer_id,sig_num,event,aux_setpoint) shared(finishCommFlag, newDataFlag)
     {
 
         #pragma omp sections
@@ -159,6 +166,9 @@ int main()
                     dUQx_WriteAnalog(processTemp.controllerOutput,processTemp.refVolt,DAC_CHANNEL_TEMP);
                     omp_unset_lock(&mtx_duqx);
 					
+					if(finishCommFlag == 1)
+						break;
+					
                     /*Se informa al hilo de comunicación*/		
                     omp_unset_lock(&mtx_temp);
                 }
@@ -208,6 +218,9 @@ int main()
 					dUQx_WriteAnalog(processFlow.controllerOutput,processFlow.refVolt, processFlow.analogOutput);
                     omp_unset_lock(&mtx_duqx);
 					
+					if(finishCommFlag == 1)
+						break;
+					
                     /*Se informa al hilo de comunicación*/ 	
                     omp_unset_lock(&mtx_flow);
                 }
@@ -228,23 +241,26 @@ int main()
 						while(1)
 						{
 							// Recibir banderas
-							receive_data(client_sock, &incomingFlags, 2*sizeof(int));
-							swapbytes(&incomingFlags, 2*sizeof(int));
-							printf("banderas = %d, %d\n",incomingFlags[0],incomingFlags[1]);
-							finishCommFlag = incomingFlags[1];
-							newDataFlag = incomingFlags[0];
+							receive_data(client_sock, &finishCommFlag, sizeof(unsigned char));
+							receive_data(client_sock, &newDataFlag, sizeof(unsigned char));
+							swapbytes(&finishCommFlag, sizeof(unsigned char));
 							if(finishCommFlag == 1)
 								break;
+							swapbytes(&newDataFlag, sizeof(unsigned char));
 							if(newDataFlag == 1)
 							{
-								// Recibir nuevos parámetros de setpoint								
-								receive_data(client_sock, &aux_setpoint, 2*sizeof(double));
-								swapbytes(&aux_setpoint,2*sizeof(double));
+								
+								
+								// Recibir nuevos parámetros de setpoint
+								receive_data(client_sock, &aux_setpoint,sizeof(double));
+								swapbytes(&aux_setpoint,sizeof(double));
 								omp_set_lock(&mtx_spn_temp);
-								processTemp.setpoint = aux_setpoint[1];
+								processTemp.setpoint = aux_setpoint;
 								omp_unset_lock(&mtx_spn_temp);
+								receive_data(client_sock, &aux_setpoint,sizeof(double));
+								swapbytes(&aux_setpoint,sizeof(double));
 								omp_set_lock(&mtx_spn_flow);
-								processFlow.setpoint = aux_setpoint[0];
+								processFlow.setpoint = aux_setpoint;
 								omp_unset_lock(&mtx_spn_flow);
 							}
 							
@@ -252,7 +268,7 @@ int main()
 							omp_set_lock(&mtx_temp);
 							
 							gotoxy(0,1);
-							printf2("Setpoint Temperatura: %lf v\n",processTemp.setpoint);
+							printf2("  Setpoint Temperatura: %lf v\n",processTemp.setpoint);
 							gotoxy(0,2);
 							printf2(" Salida de Temperatura: %lf v\n",processTemp.processOutput);
 							gotoxy(0,3);
@@ -270,15 +286,7 @@ int main()
 							printf2("      Entrada de Flujo: %lf v\n", processFlow.controllerOutput);
                     
 							/*Enviar los voltajes al cliente*/
-
-							dataSendBuffer[0] = processTemp.currentTime;
-							dataSendBuffer[1] = processFlow.processOutput;
-							dataSendBuffer[2] = processTemp.processOutput;
-							dataSendBuffer[3] = processFlow.controllerOutput;
-							dataSendBuffer[4] = processTemp.controllerOutput;
-							swapbytes(&dataSendBuffer, 5*sizeof(double));
-							
-							/*processTemp.swapControlOutput = processTemp.controllerOutput;
+							processTemp.swapControlOutput = processTemp.controllerOutput;
 							swapbytes(&processTemp.swapControlOutput, sizeof(double));
 							send_data(client_sock,&processTemp.swapControlOutput,sizeof(double));
 							
@@ -297,18 +305,21 @@ int main()
 							processTemp.currentTimeSwap   = processTemp.currentTime;
 							swapbytes(&processTemp.currentTimeSwap,sizeof(double));
 							send_data(client_sock,&processTemp.currentTimeSwap,sizeof(double));
-							*/
+						    
 						   	processTemp.currentTime += processTemp.normalTs;
 							processFlow.currentTime += processFlow.normalTs;
 						}
 						close_socket(client_sock);
 						close_socket(server_sock);
+						
+						gotoxy(0,10);
+						printf2("Saliendo...\n");
 					}
 				}
             }	
        }
     }
-
+	consoleend();
     return(0);
 }
 
