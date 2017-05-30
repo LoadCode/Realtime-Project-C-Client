@@ -11,7 +11,6 @@
 #include <uqeasysocket.h>
 #include "utils.h"
 
-#define BOARD_USB 16
 #define SERVER_PORT 9090
 
 
@@ -25,7 +24,7 @@ int main(int nargs, char* argsv[])
 	ControllerData_t processTemp, processFlow;
 	int server_sock,client_sock;
 	int board_usb;
-	int finishCommFlag = 0, newDataFlag = 1;
+	unsigned char finishCommFlag = 0, newDataFlag = 0;
 	double aux_setpoint = 0;
     /*Mutex para el acceso a la pantalla*/
     omp_lock_t mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow;
@@ -122,7 +121,7 @@ int main(int nargs, char* argsv[])
 
 	//client_wait(server_sock,&client_sock);
 	
-#pragma omp parallel default(none) shared(processTemp, processFlow, mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow) firstprivate(server_sock,client_sock) private(set,timer_data,timer_id,sig_num,event,aux_setpoint) firstprivate(finishCommFlag, newDataFlag)
+#pragma omp parallel default(none) shared(processTemp, processFlow, mtx_temp,mtx_flow,mtx_duqx, mtx_spn_temp, mtx_spn_flow) firstprivate(server_sock,client_sock) private(set,timer_data,timer_id,sig_num,event,aux_setpoint) shared(finishCommFlag, newDataFlag)
     {
 
         #pragma omp sections
@@ -175,6 +174,9 @@ int main(int nargs, char* argsv[])
                     dUQx_WriteAnalog(processTemp.controllerOutput,processTemp.refVolt,DAC_CHANNEL_TEMP);
                     omp_unset_lock(&mtx_duqx);
 					
+					if(finishCommFlag == 1)
+						break;
+					
                     /*Se informa al hilo de comunicación*/		
                     omp_unset_lock(&mtx_temp);
                 }
@@ -224,6 +226,9 @@ int main(int nargs, char* argsv[])
 					dUQx_WriteAnalog(processFlow.controllerOutput,processFlow.refVolt, processFlow.analogOutput);
                     omp_unset_lock(&mtx_duqx);
 					
+					if(finishCommFlag == 1)
+						break;
+					
                     /*Se informa al hilo de comunicación*/ 	
                     omp_unset_lock(&mtx_flow);
                 }
@@ -245,14 +250,20 @@ int main(int nargs, char* argsv[])
 						while(1)
 						{
 							// Recibir banderas
-							receive_data(client_sock, &finishCommFlag, sizeof(int));
-							receive_data(client_sock, &newDataFlag, sizeof(int));
-							swapbytes(&finishCommFlag, sizeof(int));
+							receive_data(client_sock, &finishCommFlag, sizeof(unsigned char));
+							receive_data(client_sock, &newDataFlag, sizeof(unsigned char));
+							swapbytes(&finishCommFlag, sizeof(unsigned char));
 							if(finishCommFlag == 1)
 								break;
-							swapbytes(&newDataFlag, sizeof(int));
+							swapbytes(&newDataFlag, sizeof(unsigned char));
+							
+							
+								//printf2("  Entro %d\n",newDataFlag);
+							
 							if(newDataFlag == 1)
 							{
+								
+								
 								// Recibir nuevos parámetros de setpoint
 								receive_data(client_sock, &aux_setpoint,sizeof(double));
 								swapbytes(&aux_setpoint,sizeof(double));
@@ -270,7 +281,7 @@ int main(int nargs, char* argsv[])
 							omp_set_lock(&mtx_temp);
 							
 							gotoxy(0,1);
-							printf2("Setpoint Temperatura: %lf v\n",processTemp.setpoint);
+							printf2("  Setpoint Temperatura: %lf v\n",processTemp.setpoint);
 							gotoxy(0,2);
 							printf2(" Salida de Temperatura: %lf v\n",processTemp.processOutput);
 							gotoxy(0,3);
@@ -314,11 +325,14 @@ int main(int nargs, char* argsv[])
 						}
 						close_socket(client_sock);
 						close_socket(server_sock);
+						
+						gotoxy(0,10);
+						printf2("Saliendo...\n");
 					}
 				}
             }	
        }
     }
-
+	consoleend();
     return(0);
 }
